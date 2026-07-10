@@ -17,6 +17,10 @@ DEFAULTS = {
     "days_back": 30,
     "cv_save_dir": "cv_files",
     "db_path": "hr_agent.db",
+    # OAuth fields
+    "tenant_id": "",
+    "client_id": "",
+    "client_secret": "",
 }
 
 
@@ -43,4 +47,7 @@ def get(key):
 
 def is_configured():
     s = load()
-    return bool(s.get("email_address") and s.get("email_password") and s.get("anthropic_api_key"))
+    has_email = bool(s.get("email_address"))
+    has_auth = bool(s.get("email_password") or (s.get("tenant_id") and s.get("client_id") and s.get("client_secret")))
+    has_api = bool(s.get("anthropic_api_key"))
+    return has_email and has_auth and has_api

@@ -153,6 +153,7 @@ def save_settings():
         "email_address", "email_password", "email_server",
         "email_folder", "cv_subject_keywords", "anthropic_api_key",
         "days_back", "cv_save_dir",
+        "tenant_id", "client_id", "client_secret",
     ]
     filtered = {k: v for k, v in data.items() if k in allowed}
     settings.save(filtered)

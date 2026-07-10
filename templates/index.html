@@ -251,21 +251,29 @@
           <input type="email" id="s-email" placeholder="you@company.com">
         </div>
         <div class="form-group">
-          <label>Password / App Password</label>
-          <input type="password" id="s-password" placeholder="Leave blank to keep existing">
-          <div class="hint">If your account has MFA, generate an App Password at myaccount.microsoft.com → Security → App passwords</div>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Mail Server</label>
-          <input type="text" id="s-server" placeholder="outlook.office365.com">
-          <div class="hint">Leave as default for Office 365 / Outlook</div>
-        </div>
-        <div class="form-group">
           <label>CV Folder Name</label>
           <input type="text" id="s-folder" placeholder="CV_inbox">
           <div class="hint">Exact folder name as shown in Outlook</div>
+        </div>
+      </div>
+
+      <div style="background:#f0f4ff;border-radius:8px;padding:16px;margin-top:8px;">
+        <div style="font-size:0.85rem;font-weight:600;color:#0f3460;margin-bottom:12px;">
+          Microsoft OAuth (for MFA accounts)
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Tenant ID</label>
+            <input type="text" id="s-tenant" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+          </div>
+          <div class="form-group">
+            <label>Client ID</label>
+            <input type="text" id="s-clientid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Client Secret</label>
+          <input type="password" id="s-clientsecret" placeholder="Leave blank to keep existing">
         </div>
       </div>
     </div>
@@ -327,10 +335,11 @@ async function loadSettings() {
   const res = await fetch('/settings');
   const s = await res.json();
   document.getElementById('s-email').value = s.email_address || '';
-  document.getElementById('s-password').value = '';  // never pre-fill password
-  document.getElementById('s-server').value = s.email_server || 'outlook.office365.com';
   document.getElementById('s-folder').value = s.email_folder || 'CV_inbox';
-  document.getElementById('s-apikey').value = '';    // never pre-fill API key
+  document.getElementById('s-tenant').value = s.tenant_id || '';
+  document.getElementById('s-clientid').value = s.client_id || '';
+  document.getElementById('s-clientsecret').value = '';  // never pre-fill
+  document.getElementById('s-apikey').value = '';
   document.getElementById('s-days').value = s.days_back || 30;
   document.getElementById('setup-banner').style.display = s.configured ? 'none' : 'block';
 }
@@ -342,14 +351,15 @@ async function saveSettings() {
   btn.textContent = 'Saving...';
 
   const payload = {
-    email_address:  document.getElementById('s-email').value.trim(),
-    email_server:   document.getElementById('s-server').value.trim(),
-    email_folder:   document.getElementById('s-folder').value.trim(),
+    email_address:     document.getElementById('s-email').value.trim(),
+    email_folder:      document.getElementById('s-folder').value.trim(),
+    tenant_id:         document.getElementById('s-tenant').value.trim(),
+    client_id:         document.getElementById('s-clientid').value.trim(),
     anthropic_api_key: document.getElementById('s-apikey').value.trim(),
-    days_back:      parseInt(document.getElementById('s-days').value) || 30,
+    days_back:         parseInt(document.getElementById('s-days').value) || 30,
   };
-  const pw = document.getElementById('s-password').value;
-  if (pw) payload.email_password = pw;
+  const secret = document.getElementById('s-clientsecret').value;
+  if (secret) payload.client_secret = secret;
 
   const res = await fetch('/settings', {
     method: 'POST',
