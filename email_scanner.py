@@ -1,65 +1,59 @@
 import os
 import re
-import imaplib
-import email
-from email.header import decode_header
-from datetime import datetime, timedelta
-import base64
 import json
+import base64
 import urllib.request
 import urllib.parse
+from datetime import datetime, timedelta
 
 import config
 import database
 import cv_parser
 
 CV_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
-IMAP_SERVER = "outlook.office365.com"
-IMAP_PORT = 993
+GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
-def decode_str(value):
-    if not value:
-        return ""
-    parts = decode_header(value)
-    decoded = []
-    for part, charset in parts:
-        if isinstance(part, bytes):
-            decoded.append(part.decode(charset or "utf-8", errors="ignore"))
-        else:
-            decoded.append(part)
-    return "".join(decoded)
-
-
-def get_oauth_token(tenant_id, client_id, client_secret, email_address):
-    """Get an OAuth2 access token using client credentials + on-behalf-of IMAP scope."""
+def get_token(tenant_id, client_id, client_secret):
     url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
     data = urllib.parse.urlencode({
         "client_id": client_id,
         "client_secret": client_secret,
-        "scope": "https://outlook.office365.com/.default",
+        "scope": "https://graph.microsoft.com/.default",
         "grant_type": "client_credentials",
     }).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     with urllib.request.urlopen(req) as resp:
-        result = json.loads(resp.read())
-    return result["access_token"]
+        return json.loads(resp.read())["access_token"]
 
 
-def build_auth_string(email_address, access_token):
-    auth = f"user={email_address}\x01auth=Bearer {access_token}\x01\x01"
-    return base64.b64encode(auth.encode()).decode()
+def graph_get(token, path):
+    req = urllib.request.Request(
+        f"{GRAPH_BASE}{path}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
 
 
-def find_folder(mail, folder_name):
-    _, folders = mail.list()
-    for f in folders:
-        if not f:
-            continue
-        name = f.decode("utf-8", errors="ignore").split('"/"')[-1].strip().strip('"')
-        if name.lower() == folder_name.lower():
-            return name
+def find_folder_id(token, email_address, folder_name):
+    """Find the folder ID by name, searching top-level and child folders."""
+    data = graph_get(token, f"/users/{email_address}/mailFolders?$top=50")
+    for folder in data.get("value", []):
+        if folder["displayName"].lower() == folder_name.lower():
+            return folder["id"]
+        # Check child folders
+        children = graph_get(token, f"/users/{email_address}/mailFolders/{folder['id']}/childFolders?$top=50")
+        for child in children.get("value", []):
+            if child["displayName"].lower() == folder_name.lower():
+                return child["id"]
     return None
+
+
+def get_attachment_bytes(token, email_address, message_id, attachment_id):
+    data = graph_get(token, f"/users/{email_address}/messages/{message_id}/attachments/{attachment_id}")
+    content = data.get("contentBytes", "")
+    return base64.b64decode(content) if content else None
 
 
 def scan_emails(days_back=None, progress_callback=None):
@@ -70,100 +64,93 @@ def scan_emails(days_back=None, progress_callback=None):
         if progress_callback:
             progress_callback(msg)
 
+    s = __import__("settings").load()
+    tenant_id     = s.get("tenant_id", "")
+    client_id     = s.get("client_id", "")
+    client_secret = s.get("client_secret", "")
+    email_address = s.get("email_address", "")
+    folder_name   = s.get("email_folder", "CV_inbox")
+
+    if not all([tenant_id, client_id, client_secret, email_address]):
+        log("Missing OAuth credentials. Go to Settings and fill in Tenant ID, Client ID and Client Secret.")
+        return {"saved": 0, "skipped": 0, "errors": 1}
+
     saved = 0
     skipped = 0
     errors = 0
 
-    s = __import__("settings").load()
-    tenant_id    = s.get("tenant_id", "")
-    client_id    = s.get("client_id", "")
-    client_secret = s.get("client_secret", "")
-    email_address = s.get("email_address", "")
-
-    if not all([tenant_id, client_id, client_secret, email_address]):
-        log("Missing OAuth credentials. Go to Settings and fill in Client ID, Tenant ID and Client Secret.")
-        return {"saved": 0, "skipped": 0, "errors": 1}
-
     try:
-        log("Getting OAuth token...")
-        token = get_oauth_token(tenant_id, client_id, client_secret, email_address)
-        auth_string = build_auth_string(email_address, token)
-        log("Connecting to mailbox...")
-        mail = imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT)
-        mail.authenticate("XOAUTH2", lambda x: auth_string)
-        log("Connected.")
+        log("Getting access token...")
+        token = get_token(tenant_id, client_id, client_secret)
+        log("Token obtained.")
     except Exception as e:
-        log(f"Login failed: {e}")
+        log(f"Failed to get token: {e}")
         return {"saved": 0, "skipped": 0, "errors": 1, "error": str(e)}
 
-    # Find the target folder
-    folder_name = "INBOX"
-    if config.EMAIL_FOLDER != "INBOX":
-        found = find_folder(mail, config.EMAIL_FOLDER)
-        if found:
-            folder_name = found
-            log(f"Found folder: {folder_name}")
+    # Find the mail folder
+    try:
+        if folder_name.upper() == "INBOX":
+            folder_id = "inbox"
+            log("Using INBOX.")
         else:
-            log(f"WARNING: Folder '{config.EMAIL_FOLDER}' not found. Available folders:")
-            _, folders = mail.list()
-            for f in folders:
-                if f:
-                    name = f.decode("utf-8", errors="ignore").split('"/"')[-1].strip().strip('"')
-                    log(f"  - {name}")
-            log("Falling back to INBOX.")
-
-    status, _ = mail.select(f'"{folder_name}"')
-    if status != "OK":
-        status, _ = mail.select(folder_name)
-    if status != "OK":
-        log(f"Could not open folder: {folder_name}")
-        mail.logout()
-        return {"saved": 0, "skipped": 0, "errors": 1}
-
-    since_date = (datetime.now() - timedelta(days=days_back)).strftime("%d-%b-%Y")
-    _, msg_ids = mail.search(None, f'(SINCE "{since_date}")')
-    ids = msg_ids[0].split()
-    log(f"Found {len(ids)} emails since {since_date}.")
-
-    for uid in reversed(ids):
-        try:
-            _, msg_data = mail.fetch(uid, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-
-            sender_raw = msg.get("From", "")
-            subject = decode_str(msg.get("Subject", ""))
-            date_str = msg.get("Date", "")
-
-            sender_name = ""
-            sender_email = ""
-            if "<" in sender_raw:
-                sender_name = sender_raw.split("<")[0].strip().strip('"')
-                sender_email = sender_raw.split("<")[1].rstrip(">").strip()
+            log(f"Looking for folder: {folder_name}...")
+            folder_id = find_folder_id(token, email_address, folder_name)
+            if not folder_id:
+                log(f"Folder '{folder_name}' not found. Listing available folders:")
+                data = graph_get(token, f"/users/{email_address}/mailFolders?$top=50")
+                for f in data.get("value", []):
+                    log(f"  - {f['displayName']}")
+                log("Falling back to INBOX.")
+                folder_id = "inbox"
             else:
-                sender_email = sender_raw.strip()
+                log(f"Found folder: {folder_name}")
+    except Exception as e:
+        log(f"Error finding folder: {e}")
+        return {"saved": 0, "skipped": 0, "errors": 1, "error": str(e)}
 
-            if config.CV_SUBJECT_KEYWORDS:
-                lower_subj = subject.lower()
-                if not any(kw.lower() in lower_subj for kw in config.CV_SUBJECT_KEYWORDS):
+    # Fetch messages with attachments since cutoff date
+    since = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%dT00:00:00Z")
+    filter_q = urllib.parse.quote(f"hasAttachments eq true and receivedDateTime ge {since}")
+    url_path = f"/users/{email_address}/mailFolders/{folder_id}/messages?$filter={filter_q}&$top=100&$select=id,subject,from,receivedDateTime,hasAttachments"
+
+    try:
+        log("Fetching emails...")
+        data = graph_get(token, url_path)
+        messages = data.get("value", [])
+        log(f"Found {len(messages)} emails with attachments.")
+    except Exception as e:
+        log(f"Error fetching messages: {e}")
+        return {"saved": 0, "skipped": 0, "errors": 1, "error": str(e)}
+
+    for msg in messages:
+        try:
+            msg_id       = msg["id"]
+            subject      = msg.get("subject", "")
+            received_at  = msg.get("receivedDateTime", "")
+            sender       = msg.get("from", {}).get("emailAddress", {})
+            sender_email = sender.get("address", "")
+            sender_name  = sender.get("name", "")
+
+            # Subject filter (skipped if keywords list is empty)
+            keywords = s.get("cv_subject_keywords", [])
+            if keywords:
+                if not any(kw.lower() in subject.lower() for kw in keywords):
                     continue
 
-            for part in msg.walk():
-                if part.get_content_maintype() == "multipart":
-                    continue
-                if part.get("Content-Disposition") is None:
-                    continue
-                file_name = part.get_filename()
-                if not file_name:
-                    continue
-                file_name = decode_str(file_name)
+            # Get attachments list
+            att_data = graph_get(token, f"/users/{email_address}/messages/{msg_id}/attachments?$select=id,name,contentType")
+            attachments = att_data.get("value", [])
+
+            for att in attachments:
+                file_name = att.get("name", "")
                 if not any(file_name.lower().endswith(ext) for ext in CV_EXTENSIONS):
                     continue
+
                 if database.candidate_exists(sender_email, file_name):
                     skipped += 1
                     continue
 
-                file_bytes = part.get_payload(decode=True)
+                file_bytes = get_attachment_bytes(token, email_address, msg_id, att["id"])
                 if not file_bytes:
                     continue
 
@@ -180,7 +167,7 @@ def scan_emails(days_back=None, progress_callback=None):
                     name=candidate_name,
                     email=sender_email,
                     subject=subject,
-                    received_at=date_str,
+                    received_at=received_at,
                     file_name=file_name,
                     file_path=file_path,
                     cv_text=cv_text
@@ -190,8 +177,7 @@ def scan_emails(days_back=None, progress_callback=None):
 
         except Exception as e:
             errors += 1
-            log(f"Error on message {uid}: {e}")
+            log(f"Error processing message: {e}")
 
-    mail.logout()
     log(f"Scan complete. Saved: {saved} | Skipped: {skipped} | Errors: {errors}")
     return {"saved": saved, "skipped": skipped, "errors": errors}
