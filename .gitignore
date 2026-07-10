@@ -1,0 +1,6 @@
+settings.json
+hr_agent.db
+cv_files/
+__pycache__/
+*.pyc
+.env

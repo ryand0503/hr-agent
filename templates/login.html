@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HR AI Agent — Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    background: white; border-radius: 16px; padding: 40px;
+    width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .logo { text-align: center; margin-bottom: 28px; }
+  .logo .company { font-size: 0.75rem; color: #999; letter-spacing: 1px; text-transform: uppercase; }
+  .logo h1 { font-size: 1.4rem; color: #1a1a2e; font-weight: 700; margin-top: 4px; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; color: #444; margin-bottom: 6px; }
+  input[type=password] {
+    width: 100%; padding: 11px 14px; border: 1px solid #ddd;
+    border-radius: 8px; font-size: 1rem; margin-bottom: 16px;
+  }
+  input:focus { outline: none; border-color: #0f3460; }
+  button {
+    width: 100%; padding: 12px; background: #0f3460; color: white;
+    border: none; border-radius: 8px; font-size: 1rem; font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #16213e; }
+  .error {
+    background: #fce4ec; color: #c62828; border-radius: 8px;
+    padding: 10px 14px; font-size: 0.88rem; margin-top: 12px; display: none;
+  }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #fff; border-top-color: transparent;
+    border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">
+    <div class="company">Petra Energy Berhad</div>
+    <h1>HR AI Agent</h1>
+  </div>
+  <label for="pw">Password</label>
+  <input type="password" id="pw" placeholder="Enter access password" onkeydown="if(event.key==='Enter') login()">
+  <button onclick="login()" id="btn">Sign In</button>
+  <div class="error" id="err"></div>
+</div>
+<script>
+async function login() {
+  const pw = document.getElementById('pw').value;
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('err');
+  if (!pw) return;
+  btn.innerHTML = '<span class="spinner"></span>';
+  btn.disabled = true;
+  err.style.display = 'none';
+  const res = await fetch('/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({password: pw})
+  });
+  if (res.ok) {
+    window.location.href = '/';
+  } else {
+    err.textContent = 'Incorrect password. Please try again.';
+    err.style.display = 'block';
+    btn.textContent = 'Sign In';
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
