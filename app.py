@@ -214,6 +214,59 @@ def upload_cvs():
     return jsonify({"saved": saved, "skipped": skipped, "errors": errors})
 
 
+@app.route("/import_folder", methods=["POST"])
+@login_required
+def import_folder():
+    import cv_parser
+    folder = request.json.get("folder_path", "").strip()
+    if not folder or not os.path.isdir(folder):
+        return jsonify({"error": f"Folder not found: {folder}"}), 400
+
+    cv_dir = settings.get("cv_save_dir") or "cv_files"
+    os.makedirs(cv_dir, exist_ok=True)
+
+    CV_EXTENSIONS = {".pdf", ".doc", ".docx", ".txt"}
+    saved = 0
+    skipped = 0
+    errors = []
+
+    for file_name in os.listdir(folder):
+        ext = os.path.splitext(file_name)[1].lower()
+        if ext not in CV_EXTENSIONS:
+            continue
+        try:
+            if database.candidate_exists("uploaded", file_name):
+                skipped += 1
+                continue
+
+            file_path_src = os.path.join(folder, file_name)
+            with open(file_path_src, "rb") as f:
+                file_bytes = f.read()
+
+            cv_text = cv_parser.extract_text(file_name, file_bytes)
+            candidate_name = cv_parser.guess_name_from_text(cv_text, "")
+
+            safe_name = secure_filename(file_name)
+            file_path_dst = os.path.join(cv_dir, safe_name)
+            with open(file_path_dst, "wb") as f:
+                f.write(file_bytes)
+
+            database.insert_candidate(
+                name=candidate_name,
+                email="uploaded",
+                subject="Folder import",
+                received_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                file_name=file_name,
+                file_path=file_path_dst,
+                cv_text=cv_text,
+            )
+            saved += 1
+        except Exception as e:
+            errors.append(f"{file_name}: {e}")
+
+    return jsonify({"saved": saved, "skipped": skipped, "errors": errors})
+
+
 @app.route("/cv_files/<path:filename>")
 @login_required
 def serve_cv(filename):

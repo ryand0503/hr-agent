@@ -234,6 +234,16 @@
         <input type="file" id="file-input" multiple accept=".pdf,.doc,.docx,.txt" style="display:none" onchange="uploadFiles(this.files)">
       </div>
       <div id="upload-result" style="margin-top:12px;display:none;"></div>
+
+      <div style="margin-top:20px;border-top:1px solid #eee;padding-top:16px;">
+        <div style="font-weight:600;font-size:0.9rem;color:#444;margin-bottom:8px;">Or import from a folder on this machine</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="folder-path" placeholder="e.g. C:\Users\RyanDawil\Desktop\CVs"
+            style="flex:1;padding:9px 12px;border:1px solid #ddd;border-radius:6px;font-size:0.88rem;">
+          <button class="btn-primary" onclick="importFolder()">Import Folder</button>
+        </div>
+        <div id="folder-result" style="margin-top:10px;display:none;"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -391,6 +401,37 @@ function esc(str) {
 
 
 // ---- ALL CANDIDATES ----
+async function importFolder() {
+  const folder = document.getElementById('folder-path').value.trim();
+  const result = document.getElementById('folder-result');
+  if (!folder) return;
+  result.style.display = 'block';
+  result.className = 'alert';
+  result.style.background = '#f0f4ff';
+  result.style.color = '#0f3460';
+  result.textContent = 'Importing from folder...';
+
+  const res = await fetch('/import_folder', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({folder_path: folder})
+  });
+  const data = await res.json();
+
+  if (data.error) {
+    result.className = 'alert alert-error';
+    result.textContent = data.error;
+  } else {
+    result.className = 'alert alert-success';
+    let msg = `Done — ${data.saved} added, ${data.skipped} already in database.`;
+    if (data.errors?.length) msg += ` Errors: ${data.errors.join(', ')}`;
+    result.textContent = msg;
+    document.getElementById('stat-total').textContent =
+      parseInt(document.getElementById('stat-total').textContent) + data.saved;
+    loadAllCandidates();
+  }
+}
+
 function handleDrop(event) {
   event.preventDefault();
   document.getElementById('drop-zone').style.borderColor = '#ccc';
