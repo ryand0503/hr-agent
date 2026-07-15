@@ -54,10 +54,11 @@ def call_claude(prompt, api_key):
     return message.content[0].text
 
 
-def call_local_llm(prompt, base_url):
-    """Call llama-server or any OpenAI-compatible local LLM."""
+def call_local_llm(prompt, base_url, model):
+    """Call Ollama or any OpenAI-compatible local LLM."""
     url = base_url.rstrip("/") + "/v1/chat/completions"
     payload = json.dumps({
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
         "max_tokens": 4096,
@@ -78,8 +79,9 @@ def rank_candidates(jd_text, candidates, top_n):
     prompt = build_prompt(jd_text, candidates, top_n)
 
     if llm_mode == "local":
-        base_url = s.get("local_llm_url", "http://127.0.0.1:8080")
-        raw = call_local_llm(prompt, base_url)
+        base_url = s.get("local_llm_url", "http://host.docker.internal:11434")
+        model    = s.get("local_llm_model", "gemma3:1b")
+        raw = call_local_llm(prompt, base_url, model)
     else:
         api_key = s.get("anthropic_api_key", "")
         if not api_key:
