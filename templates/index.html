@@ -156,11 +156,6 @@
   .form-group input:focus { outline: none; border-color: #0f3460; }
   .form-group .hint { font-size: 0.78rem; color: #999; margin-top: 4px; }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .setup-banner {
-    background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
-    padding: 12px 16px; margin-bottom: 20px; font-size: 0.9rem; color: #856404;
-    display: none;
-  }
 </style>
 </head>
 <body>
@@ -191,14 +186,10 @@
     </div>
   </div>
 
-  <div id="setup-banner" class="setup-banner">
-    ⚠️ Setup required — go to the <strong>Settings</strong> tab and enter your email credentials and API key before scanning.
-  </div>
 
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab('rank')">Rank Candidates</div>
     <div class="tab" onclick="switchTab('all')">All Candidates</div>
-    <div class="tab" onclick="switchTab('settings')">⚙ Settings</div>
   </div>
 
   <!-- RANK TAB -->
@@ -226,91 +217,6 @@
   </div>
 
 
-  <!-- SETTINGS TAB -->
-  <div class="tab-content" id="tab-settings">
-    <div class="card">
-      <h2>Email Account</h2>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Email Address</label>
-          <input type="email" id="s-email" placeholder="you@company.com">
-        </div>
-        <div class="form-group">
-          <label>CV Folder Name</label>
-          <input type="text" id="s-folder" placeholder="CV_inbox">
-          <div class="hint">Exact folder name as shown in Outlook</div>
-        </div>
-      </div>
-
-      <div style="background:#f0f4ff;border-radius:8px;padding:16px;margin-top:8px;">
-        <div style="font-size:0.85rem;font-weight:600;color:#0f3460;margin-bottom:12px;">
-          Microsoft OAuth (for MFA accounts)
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Tenant ID</label>
-            <input type="text" id="s-tenant" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-          </div>
-          <div class="form-group">
-            <label>Client ID</label>
-            <input type="text" id="s-clientid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-          </div>
-        </div>
-        <div class="form-group">
-          <label>Client Secret</label>
-          <input type="password" id="s-clientsecret" placeholder="Leave blank to keep existing">
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>AI Settings</h2>
-
-      <div class="form-group">
-        <label>LLM Mode</label>
-        <div style="display:flex;gap:12px;margin-top:4px;">
-          <label style="font-weight:normal;display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="radio" name="llm-mode" value="claude" id="llm-claude" onchange="toggleLLMMode()"> Claude (cloud)
-          </label>
-          <label style="font-weight:normal;display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="radio" name="llm-mode" value="local" id="llm-local" onchange="toggleLLMMode()"> Local LLM
-          </label>
-        </div>
-      </div>
-
-      <div id="claude-section">
-        <div class="form-group">
-          <label>Anthropic API Key</label>
-          <input type="password" id="s-apikey" placeholder="sk-ant-...">
-          <div class="hint">Get yours at console.anthropic.com</div>
-        </div>
-      </div>
-
-      <div id="local-section" style="display:none;">
-        <div class="form-group">
-          <label>Local LLM URL</label>
-          <input type="text" id="s-llmurl" placeholder="http://127.0.0.1:8080">
-          <div class="hint">URL where llama-server or Ollama is running</div>
-        </div>
-      </div>
-
-      <div class="form-row" style="max-width:420px;margin-top:8px;">
-        <div class="form-group">
-          <label>Scan period (days back)</label>
-          <input type="number" id="s-days" min="1" max="365" value="30">
-          <div class="hint">How far back to look on first sync</div>
-        </div>
-        <div class="form-group">
-          <label>Auto-sync every (minutes)</label>
-          <input type="number" id="s-interval" min="5" max="1440" value="30">
-          <div class="hint">How often to check for new CVs</div>
-        </div>
-      </div>
-    </div>
-
-    <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">Save Settings</button>
-    <div id="settings-msg" class="alert" style="display:none;margin-top:12px;"></div>
-  </div>
 
   <!-- ALL CANDIDATES TAB -->
   <div class="tab-content" id="tab-all">
@@ -383,81 +289,7 @@ function switchTab(name) {
   event.target.classList.add('active');
   document.getElementById('tab-' + name).classList.add('active');
   if (name === 'all') loadAllCandidates();
-  if (name === 'settings') loadSettings();
 }
-
-// ---- SETTINGS ----
-function toggleLLMMode() {
-  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value;
-  document.getElementById('claude-section').style.display = mode === 'local' ? 'none' : 'block';
-  document.getElementById('local-section').style.display  = mode === 'local' ? 'block' : 'none';
-}
-
-async function loadSettings() {
-  const res = await fetch('/settings');
-  const s = await res.json();
-  document.getElementById('s-email').value    = s.email_address || '';
-  document.getElementById('s-folder').value   = s.email_folder  || 'CV_inbox';
-  document.getElementById('s-tenant').value   = s.tenant_id     || '';
-  document.getElementById('s-clientid').value = s.client_id     || '';
-  document.getElementById('s-clientsecret').value = '';
-  document.getElementById('s-apikey').value   = '';
-  document.getElementById('s-llmurl').value   = s.local_llm_url || 'http://127.0.0.1:8080';
-  document.getElementById('s-days').value     = s.days_back     || 30;
-  document.getElementById('s-interval').value = s.scan_interval_minutes || 30;
-  const mode = s.llm_mode || 'claude';
-  document.getElementById(mode === 'local' ? 'llm-local' : 'llm-claude').checked = true;
-  toggleLLMMode();
-  document.getElementById('setup-banner').style.display = s.configured ? 'none' : 'block';
-}
-
-async function saveSettings() {
-  const btn  = document.getElementById('save-settings-btn');
-  const msg  = document.getElementById('settings-msg');
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-
-  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value || 'claude';
-  const payload = {
-    email_address:  document.getElementById('s-email').value.trim(),
-    email_folder:   document.getElementById('s-folder').value.trim(),
-    tenant_id:      document.getElementById('s-tenant').value.trim(),
-    client_id:      document.getElementById('s-clientid').value.trim(),
-    days_back:               parseInt(document.getElementById('s-days').value)     || 30,
-    scan_interval_minutes:   parseInt(document.getElementById('s-interval').value) || 30,
-    llm_mode:       mode,
-    local_llm_url:  document.getElementById('s-llmurl').value.trim(),
-    anthropic_api_key: document.getElementById('s-apikey').value.trim(),
-  };
-  const secret = document.getElementById('s-clientsecret').value;
-  if (secret) payload.client_secret = secret;
-
-  const res = await fetch('/settings', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  });
-
-  btn.disabled = false;
-  btn.textContent = 'Save Settings';
-
-  if (res.ok) {
-    msg.className = 'alert alert-success';
-    msg.textContent = 'Settings saved.';
-    document.getElementById('setup-banner').style.display = 'none';
-  } else {
-    msg.className = 'alert alert-error';
-    msg.textContent = 'Failed to save settings.';
-  }
-  msg.style.display = 'block';
-}
-
-// Check setup status on load
-window.addEventListener('load', async () => {
-  const res = await fetch('/settings');
-  const s = await res.json();
-  if (!s.configured) document.getElementById('setup-banner').style.display = 'block';
-});
 
 // ---- RANKING ----
 async function runRanking() {

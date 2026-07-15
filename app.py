@@ -160,36 +160,6 @@ def rank():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/settings", methods=["GET"])
-@login_required
-def get_settings():
-    s = settings.load()
-    safe = {k: v for k, v in s.items() if k not in ("email_password", "client_secret")}
-    safe["email_password"] = "••••••••" if s.get("email_password") else ""
-    safe["client_secret"]  = "••••••••" if s.get("client_secret") else ""
-    safe["configured"] = settings.is_configured()
-    return jsonify(safe)
-
-
-@app.route("/settings", methods=["POST"])
-@login_required
-def save_settings():
-    data = request.json or {}
-    for key in ("email_password", "client_secret"):
-        if data.get(key, "").startswith("•"):
-            data.pop(key, None)
-    allowed = [
-        "email_address", "email_password", "email_server",
-        "email_folder", "cv_subject_keywords", "anthropic_api_key",
-        "days_back", "cv_save_dir",
-        "tenant_id", "client_id", "client_secret",
-        "llm_mode", "local_llm_url",
-        "scan_interval_minutes",
-    ]
-    filtered = {k: v for k, v in data.items() if k in allowed}
-    settings.save(filtered)
-    return jsonify({"ok": True})
-
 
 @app.route("/cv_files/<path:filename>")
 @login_required

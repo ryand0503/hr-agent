@@ -1,81 +1,46 @@
 """
-Loads settings from settings.json if it exists (local),
-otherwise falls back to environment variables (Railway/cloud).
-This file is safe to share — settings.json and env vars are not.
+All settings come from environment variables (.env file locally, Railway vars in cloud).
+No settings.json, no UI form needed.
 """
-import json
 import os
-
-SETTINGS_FILE = "settings.json"
-
-DEFAULTS = {
-    "email_address":          "",
-    "email_password":         "",
-    "email_server":           "outlook.office365.com",
-    "email_folder":           "CV_Inbox",
-    "cv_subject_keywords":    [],
-    "anthropic_api_key":      "",
-    "days_back":              30,
-    "cv_save_dir":            "cv_files",
-    "db_path":                "hr_agent.db",
-    "tenant_id":              "",
-    "client_id":              "",
-    "client_secret":          "",
-    "llm_mode":               "claude",
-    "local_llm_url":          "http://127.0.0.1:8080",
-    "scan_interval_minutes":  30,
-}
-
-# Map setting keys to environment variable names
-ENV_MAP = {
-    "email_address":         "EMAIL_ADDRESS",
-    "email_password":        "EMAIL_PASSWORD",
-    "email_folder":          "EMAIL_FOLDER",
-    "anthropic_api_key":     "ANTHROPIC_API_KEY",
-    "tenant_id":             "TENANT_ID",
-    "client_id":             "CLIENT_ID",
-    "client_secret":         "CLIENT_SECRET",
-    "llm_mode":              "LLM_MODE",
-    "scan_interval_minutes": "SCAN_INTERVAL_MINUTES",
-}
-
-
-def load():
-    # Start with defaults
-    merged = dict(DEFAULTS)
-
-    # Layer in env vars (so Railway variables always work)
-    for key, env_key in ENV_MAP.items():
-        val = os.environ.get(env_key)
-        if val:
-            merged[key] = int(val) if key == "scan_interval_minutes" else val
-
-    # Layer in settings.json on top (local overrides env vars)
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            saved = json.load(f)
-        merged.update(saved)
-
-    return merged
-
-
-def save(data):
-    current = load()
-    current.update(data)
-    # Only save to file — never write back to env vars
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump(current, f, indent=2)
 
 
 def get(key):
-    return load().get(key, DEFAULTS.get(key))
+    mapping = {
+        "email_address":         os.environ.get("EMAIL_ADDRESS", ""),
+        "email_password":        os.environ.get("EMAIL_PASSWORD", ""),
+        "email_server":          os.environ.get("EMAIL_SERVER", "outlook.office365.com"),
+        "email_folder":          os.environ.get("EMAIL_FOLDER", "CV_Inbox"),
+        "cv_subject_keywords":   [],
+        "anthropic_api_key":     os.environ.get("ANTHROPIC_API_KEY", ""),
+        "days_back":             int(os.environ.get("DAYS_BACK", "30")),
+        "cv_save_dir":           os.environ.get("CV_SAVE_DIR", "cv_files"),
+        "tenant_id":             os.environ.get("TENANT_ID", ""),
+        "client_id":             os.environ.get("CLIENT_ID", ""),
+        "client_secret":         os.environ.get("CLIENT_SECRET", ""),
+        "llm_mode":              os.environ.get("LLM_MODE", "claude"),
+        "local_llm_url":         os.environ.get("LOCAL_LLM_URL", "http://127.0.0.1:8080"),
+        "scan_interval_minutes": int(os.environ.get("SCAN_INTERVAL_MINUTES", "30")),
+    }
+    return mapping.get(key)
+
+
+def load():
+    return {
+        "email_address":         get("email_address"),
+        "email_folder":          get("email_folder"),
+        "tenant_id":             get("tenant_id"),
+        "client_id":             get("client_id"),
+        "anthropic_api_key":     get("anthropic_api_key"),
+        "days_back":             get("days_back"),
+        "scan_interval_minutes": get("scan_interval_minutes"),
+        "llm_mode":              get("llm_mode"),
+        "local_llm_url":         get("local_llm_url"),
+    }
 
 
 def is_configured():
-    s = load()
-    has_email = bool(s.get("email_address"))
-    has_auth  = bool(s.get("email_password") or (
-        s.get("tenant_id") and s.get("client_id") and s.get("client_secret")
-    ))
-    has_api   = bool(s.get("anthropic_api_key"))
+    has_email = bool(get("email_address"))
+    has_auth  = bool(get("tenant_id") and get("client_id") and get("client_secret"))
+    has_api   = bool(get("anthropic_api_key"))
     return has_email and has_auth and has_api

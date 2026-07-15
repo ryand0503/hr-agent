@@ -21,13 +21,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://hr_user:hr_pass@db:5432/hr_agent
-      APP_SECRET: change-this-secret
-      APP_PASSWORD: ""        # set a password to protect the app
     volumes:
-      - ./cv_files:/app/cv_files      # CV files persist on your machine
-      - ./settings.json:/app/settings.json  # settings persist too
+      - ./cv_files:/app/cv_files
 
 volumes:
   pg_data:
