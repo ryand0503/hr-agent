@@ -1,4 +1,7 @@
 import os
+import threading
+import time
+from datetime import datetime
 from functools import wraps
 from flask import (
     Flask, render_template, request, jsonify,
@@ -14,11 +17,53 @@ import settings
 database.init_db()
 
 app = Flask(__name__)
-# Secret key for sessions — set APP_SECRET env var in production
 app.secret_key = os.environ.get("APP_SECRET", "dev-secret-change-in-production")
-
-# App password — set APP_PASSWORD env var in production (Railway dashboard)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+# ---- Auto-sync state ----
+sync_state = {
+    "last_sync": None,
+    "last_result": None,
+    "last_log": [],
+    "running": False,
+}
+
+
+def run_sync():
+    """Run one email scan cycle."""
+    if sync_state["running"]:
+        return
+    sync_state["running"] = True
+    log = []
+    try:
+        import email_scanner
+        result = email_scanner.scan_emails(
+            days_back=settings.get("days_back"),
+            progress_callback=lambda msg: log.append(msg)
+        )
+        sync_state["last_result"] = result
+    except Exception as e:
+        log.append(f"Error: {e}")
+        sync_state["last_result"] = {"error": str(e)}
+    finally:
+        sync_state["last_sync"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sync_state["last_log"] = log
+        sync_state["running"] = False
+
+
+def auto_sync_loop():
+    """Background thread: sync on startup then every scan_interval_minutes."""
+    time.sleep(5)  # wait for app to fully start
+    while True:
+        s = settings.load()
+        if s.get("tenant_id") and s.get("client_id") and s.get("client_secret") and s.get("email_address"):
+            threading.Thread(target=run_sync, daemon=True).start()
+        interval = int(s.get("scan_interval_minutes", 30)) * 60
+        time.sleep(interval)
+
+
+threading.Thread(target=auto_sync_loop, daemon=True).start()
+
 
 # ---- Auth ----
 
@@ -69,6 +114,26 @@ def candidates():
     return jsonify(rows)
 
 
+@app.route("/sync_status")
+@login_required
+def sync_status():
+    return jsonify({
+        "last_sync": sync_state["last_sync"],
+        "last_result": sync_state["last_result"],
+        "last_log": sync_state["last_log"],
+        "running": sync_state["running"],
+        "candidate_count": database.get_candidate_count(),
+    })
+
+
+@app.route("/sync_now", methods=["POST"])
+@login_required
+def sync_now():
+    if sync_state["running"]:
+        return jsonify({"error": "Sync already running"}), 400
+    threading.Thread(target=run_sync, daemon=True).start()
+    return jsonify({"ok": True})
+
 
 @app.route("/rank", methods=["POST"])
 @login_required
@@ -82,7 +147,7 @@ def rank():
 
     candidates = database.get_candidates_for_ranking()
     if not candidates:
-        return jsonify({"error": "No candidates in the database yet. Run an email scan first."}), 400
+        return jsonify({"error": "No candidates in the database yet — waiting for email sync."}), 400
 
     if top_n > len(candidates):
         top_n = len(candidates)
@@ -99,8 +164,9 @@ def rank():
 @login_required
 def get_settings():
     s = settings.load()
-    safe = {k: v for k, v in s.items() if k != "email_password"}
+    safe = {k: v for k, v in s.items() if k not in ("email_password", "client_secret")}
     safe["email_password"] = "••••••••" if s.get("email_password") else ""
+    safe["client_secret"]  = "••••••••" if s.get("client_secret") else ""
     safe["configured"] = settings.is_configured()
     return jsonify(safe)
 
@@ -109,14 +175,16 @@ def get_settings():
 @login_required
 def save_settings():
     data = request.json or {}
-    if data.get("email_password", "").startswith("•"):
-        data.pop("email_password", None)
+    for key in ("email_password", "client_secret"):
+        if data.get(key, "").startswith("•"):
+            data.pop(key, None)
     allowed = [
         "email_address", "email_password", "email_server",
         "email_folder", "cv_subject_keywords", "anthropic_api_key",
         "days_back", "cv_save_dir",
         "tenant_id", "client_id", "client_secret",
         "llm_mode", "local_llm_url",
+        "scan_interval_minutes",
     ]
     filtered = {k: v for k, v in data.items() if k in allowed}
     settings.save(filtered)
@@ -126,8 +194,7 @@ def save_settings():
 @app.route("/cv_files/<path:filename>")
 @login_required
 def serve_cv(filename):
-    import config
-    return send_from_directory(config.CV_SAVE_DIR, filename)
+    return send_from_directory(settings.get("cv_save_dir"), filename)
 
 
 if __name__ == "__main__":

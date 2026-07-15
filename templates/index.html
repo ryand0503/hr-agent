@@ -180,9 +180,14 @@
       <div class="num" id="stat-total">{{ candidate_count }}</div>
       <div class="lbl">Total Candidates</div>
     </div>
-    <div class="stat-card">
-      <div class="num" id="stat-new">—</div>
-      <div class="lbl">Added This Session</div>
+    <div class="stat-card" style="flex:2;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div class="lbl">Email Sync</div>
+          <div id="sync-status" style="font-size:0.9rem;margin-top:4px;color:#555;">Waiting for first sync...</div>
+        </div>
+        <button class="btn-primary" id="sync-now-btn" onclick="syncNow()" style="font-size:0.8rem;padding:6px 14px;">Sync Now</button>
+      </div>
     </div>
   </div>
 
@@ -289,9 +294,17 @@
         </div>
       </div>
 
-      <div class="form-group" style="max-width:200px;margin-top:8px;">
-        <label>Default scan period (days)</label>
-        <input type="number" id="s-days" min="1" max="365" value="30">
+      <div class="form-row" style="max-width:420px;margin-top:8px;">
+        <div class="form-group">
+          <label>Scan period (days back)</label>
+          <input type="number" id="s-days" min="1" max="365" value="30">
+          <div class="hint">How far back to look on first sync</div>
+        </div>
+        <div class="form-group">
+          <label>Auto-sync every (minutes)</label>
+          <input type="number" id="s-interval" min="5" max="1440" value="30">
+          <div class="hint">How often to check for new CVs</div>
+        </div>
       </div>
     </div>
 
@@ -325,6 +338,45 @@
 <script>
 let sessionAdded = 0;
 
+// ---- Auto-sync status ----
+async function pollSyncStatus() {
+  try {
+    const res = await fetch('/sync_status');
+    const s = await res.json();
+    const el = document.getElementById('sync-status');
+    const btn = document.getElementById('sync-now-btn');
+
+    if (s.running) {
+      el.innerHTML = '<span style="color:#e67e22;">⟳ Syncing now...</span>';
+      btn.disabled = true;
+    } else if (s.last_sync) {
+      const added = s.last_result?.saved ?? 0;
+      const skipped = s.last_result?.skipped ?? 0;
+      const err = s.last_result?.error;
+      if (err) {
+        el.innerHTML = `<span style="color:#c62828;">✗ Last sync failed — ${err}</span><br><small style="color:#999;">at ${s.last_sync}</small>`;
+      } else {
+        el.innerHTML = `<span style="color:#27ae60;">✓ Last sync: ${s.last_sync}</span> &nbsp;·&nbsp; +${added} new, ${skipped} skipped`;
+      }
+      btn.disabled = false;
+      document.getElementById('stat-total').textContent = s.candidate_count;
+    } else {
+      el.textContent = 'Waiting for first sync...';
+      btn.disabled = false;
+    }
+  } catch(e) {}
+}
+
+async function syncNow() {
+  document.getElementById('sync-now-btn').disabled = true;
+  await fetch('/sync_now', { method: 'POST' });
+  pollSyncStatus();
+}
+
+// Poll every 5 seconds
+setInterval(pollSyncStatus, 5000);
+pollSyncStatus();
+
 function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -352,6 +404,7 @@ async function loadSettings() {
   document.getElementById('s-apikey').value   = '';
   document.getElementById('s-llmurl').value   = s.local_llm_url || 'http://127.0.0.1:8080';
   document.getElementById('s-days').value     = s.days_back     || 30;
+  document.getElementById('s-interval').value = s.scan_interval_minutes || 30;
   const mode = s.llm_mode || 'claude';
   document.getElementById(mode === 'local' ? 'llm-local' : 'llm-claude').checked = true;
   toggleLLMMode();
@@ -370,7 +423,8 @@ async function saveSettings() {
     email_folder:   document.getElementById('s-folder').value.trim(),
     tenant_id:      document.getElementById('s-tenant').value.trim(),
     client_id:      document.getElementById('s-clientid').value.trim(),
-    days_back:      parseInt(document.getElementById('s-days').value) || 30,
+    days_back:               parseInt(document.getElementById('s-days').value)     || 30,
+    scan_interval_minutes:   parseInt(document.getElementById('s-interval').value) || 30,
     llm_mode:       mode,
     local_llm_url:  document.getElementById('s-llmurl').value.trim(),
     anthropic_api_key: document.getElementById('s-apikey').value.trim(),

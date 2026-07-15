@@ -24,6 +24,8 @@ DEFAULTS = {
     # LLM fields
     "llm_mode": "claude",
     "local_llm_url": "http://127.0.0.1:8080",
+    # Auto-sync
+    "scan_interval_minutes": 30,
 }
 
 
