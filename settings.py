@@ -3,6 +3,14 @@ All settings come from environment variables (.env file locally, Railway vars in
 No settings.json, no UI form needed.
 """
 import os
+from pathlib import Path
+
+# Load .env file if it exists (works locally and in Docker)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
 
 
 def get(key):
