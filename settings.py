@@ -31,6 +31,7 @@ def load():
         "email_folder":          get("email_folder"),
         "tenant_id":             get("tenant_id"),
         "client_id":             get("client_id"),
+        "client_secret":         get("client_secret"),
         "anthropic_api_key":     get("anthropic_api_key"),
         "days_back":             get("days_back"),
         "scan_interval_minutes": get("scan_interval_minutes"),
