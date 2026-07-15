@@ -7,6 +7,7 @@ from flask import (
     Flask, render_template, request, jsonify,
     send_from_directory, session, redirect, url_for
 )
+from werkzeug.utils import secure_filename
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -159,6 +160,58 @@ def rank():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+
+@app.route("/upload", methods=["POST"])
+@login_required
+def upload_cvs():
+    import cv_parser
+    files = request.files.getlist("files")
+    if not files:
+        return jsonify({"error": "No files received"}), 400
+
+    saved = 0
+    skipped = 0
+    errors = []
+    cv_dir = settings.get("cv_save_dir") or "cv_files"
+    os.makedirs(cv_dir, exist_ok=True)
+
+    for f in files:
+        try:
+            filename = secure_filename(f.filename)
+            if not filename:
+                continue
+            ext = os.path.splitext(filename)[1].lower()
+            if ext not in {".pdf", ".doc", ".docx", ".txt"}:
+                errors.append(f"{filename}: unsupported file type")
+                continue
+
+            if database.candidate_exists("uploaded", filename):
+                skipped += 1
+                continue
+
+            file_bytes = f.read()
+            cv_text = cv_parser.extract_text(filename, file_bytes)
+            candidate_name = cv_parser.guess_name_from_text(cv_text, "")
+
+            file_path = os.path.join(cv_dir, filename)
+            with open(file_path, "wb") as out:
+                out.write(file_bytes)
+
+            database.insert_candidate(
+                name=candidate_name,
+                email="uploaded",
+                subject="Manual upload",
+                received_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                file_name=filename,
+                file_path=file_path,
+                cv_text=cv_text,
+            )
+            saved += 1
+        except Exception as e:
+            errors.append(f"{f.filename}: {e}")
+
+    return jsonify({"saved": saved, "skipped": skipped, "errors": errors})
 
 
 @app.route("/cv_files/<path:filename>")

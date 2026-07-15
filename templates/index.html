@@ -220,6 +220,22 @@
 
   <!-- ALL CANDIDATES TAB -->
   <div class="tab-content" id="tab-all">
+
+    <div class="card">
+      <h2>Upload CVs Manually</h2>
+      <div id="drop-zone" style="border:2px dashed #ccc;border-radius:10px;padding:32px;text-align:center;cursor:pointer;transition:border-color 0.2s;"
+           onclick="document.getElementById('file-input').click()"
+           ondragover="event.preventDefault();this.style.borderColor='#0f3460'"
+           ondragleave="this.style.borderColor='#ccc'"
+           ondrop="handleDrop(event)">
+        <div style="font-size:2rem;margin-bottom:8px;">📄</div>
+        <div style="font-weight:600;color:#0f3460;">Click to select or drag & drop CV files here</div>
+        <div style="font-size:0.8rem;color:#999;margin-top:4px;">PDF, DOCX, DOC, TXT — multiple files supported</div>
+        <input type="file" id="file-input" multiple accept=".pdf,.doc,.docx,.txt" style="display:none" onchange="uploadFiles(this.files)">
+      </div>
+      <div id="upload-result" style="margin-top:12px;display:none;"></div>
+    </div>
+
     <div class="card">
       <h2>All Candidates in Database</h2>
       <div id="all-loading" style="color:#888;font-size:0.9rem;">Loading...</div>
@@ -237,6 +253,7 @@
         <tbody id="candidate-tbody"></tbody>
       </table>
     </div>
+  </div>
   </div>
 
 </div>
@@ -374,6 +391,41 @@ function esc(str) {
 
 
 // ---- ALL CANDIDATES ----
+function handleDrop(event) {
+  event.preventDefault();
+  document.getElementById('drop-zone').style.borderColor = '#ccc';
+  uploadFiles(event.dataTransfer.files);
+}
+
+async function uploadFiles(files) {
+  if (!files.length) return;
+  const result = document.getElementById('upload-result');
+  result.style.display = 'block';
+  result.className = 'alert';
+  result.style.background = '#f0f4ff';
+  result.style.color = '#0f3460';
+  result.textContent = `Uploading ${files.length} file(s)...`;
+
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+
+  const res = await fetch('/upload', { method: 'POST', body: form });
+  const data = await res.json();
+
+  if (data.error) {
+    result.className = 'alert alert-error';
+    result.textContent = data.error;
+  } else {
+    result.className = 'alert alert-success';
+    let msg = `Done — ${data.saved} added, ${data.skipped} already in database.`;
+    if (data.errors?.length) msg += ` Errors: ${data.errors.join(', ')}`;
+    result.textContent = msg;
+    document.getElementById('stat-total').textContent =
+      parseInt(document.getElementById('stat-total').textContent) + data.saved;
+    loadAllCandidates();
+  }
+}
+
 async function loadAllCandidates() {
   const res = await fetch('/candidates');
   const rows = await res.json();
