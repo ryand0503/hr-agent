@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: hr_agent
+      POSTGRES_USER: hr_user
+      POSTGRES_PASSWORD: hr_pass
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hr_user -d hr_agent"]
+      interval: 5s
+      retries: 5
+
+  app:
+    build: .
+    restart: always
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://hr_user:hr_pass@db:5432/hr_agent
+      APP_SECRET: change-this-secret
+      APP_PASSWORD: ""        # set a password to protect the app
+    volumes:
+      - ./cv_files:/app/cv_files      # CV files persist on your machine
+      - ./settings.json:/app/settings.json  # settings persist too
+
+volumes:
+  pg_data:

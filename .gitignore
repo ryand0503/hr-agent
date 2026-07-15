@@ -4,3 +4,4 @@ cv_files/
 __pycache__/
 *.pyc
 .env
+.idea/

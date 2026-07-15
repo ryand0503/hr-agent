@@ -1,19 +1,23 @@
-import sqlite3
 import os
-from config import DB_PATH
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set.")
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     return conn
 
 
 def init_db():
     conn = get_conn()
-    conn.executescript("""
+    cur = conn.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS candidates (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             name        TEXT,
             email       TEXT,
             subject     TEXT,
@@ -21,79 +25,96 @@ def init_db():
             file_name   TEXT,
             file_path   TEXT,
             cv_text     TEXT,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-        );
-
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS rankings (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           SERIAL PRIMARY KEY,
             jd_snippet   TEXT,
-            candidate_id INTEGER,
+            candidate_id INTEGER REFERENCES candidates(id),
             rank         INTEGER,
             score        INTEGER,
             summary      TEXT,
             strengths    TEXT,
             gaps         TEXT,
-            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (candidate_id) REFERENCES candidates(id)
-        );
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
     """)
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def candidate_exists(email, file_name):
     conn = get_conn()
-    row = conn.execute(
-        "SELECT id FROM candidates WHERE email=? AND file_name=?",
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM candidates WHERE email=%s AND file_name=%s",
         (email, file_name)
-    ).fetchone()
+    )
+    row = cur.fetchone()
+    cur.close()
     conn.close()
     return row is not None
 
 
 def insert_candidate(name, email, subject, received_at, file_name, file_path, cv_text):
     conn = get_conn()
-    conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         """INSERT INTO candidates (name, email, subject, received_at, file_name, file_path, cv_text)
-           VALUES (?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
         (name, email, subject, received_at, file_name, file_path, cv_text)
     )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_all_candidates():
     conn = get_conn()
-    rows = conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         "SELECT id, name, email, subject, received_at, file_name FROM candidates ORDER BY received_at DESC"
-    ).fetchall()
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def get_candidates_for_ranking():
     conn = get_conn()
-    rows = conn.execute(
+    cur = conn.cursor()
+    cur.execute(
         "SELECT id, name, email, cv_text FROM candidates WHERE cv_text IS NOT NULL AND cv_text != ''"
-    ).fetchall()
+    )
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
     conn.close()
-    return [dict(r) for r in rows]
+    return rows
 
 
 def save_rankings(jd_snippet, results):
     conn = get_conn()
+    cur = conn.cursor()
     for r in results:
-        conn.execute(
+        cur.execute(
             """INSERT INTO rankings (jd_snippet, candidate_id, rank, score, summary, strengths, gaps)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (jd_snippet, r["id"], r["rank"], r["score"], r["summary"], r["strengths"], r["gaps"])
         )
     conn.commit()
+    cur.close()
     conn.close()
 
 
 def get_candidate_count():
     conn = get_conn()
-    count = conn.execute("SELECT COUNT(*) FROM candidates").fetchone()[0]
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS count FROM candidates")
+    count = cur.fetchone()["count"]
+    cur.close()
     conn.close()
     return count
