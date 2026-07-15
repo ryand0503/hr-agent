@@ -27,6 +27,7 @@ services:
       DATABASE_URL: postgresql://hr_user:hr_pass@db:5432/hr_agent
     volumes:
       - ./cv_files:/app/cv_files
+      - "C:\\Users\\RyanDawil\\OneDrive - Petra Energy Berhad\\Desktop\\Python Projects\\hr_agent\\cv_files:/app/input_cvs:ro"
 
 volumes:
   pg_data:

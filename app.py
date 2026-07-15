@@ -214,6 +214,20 @@ def upload_cvs():
     return jsonify({"saved": saved, "skipped": skipped, "errors": errors})
 
 
+@app.route("/parse_jd", methods=["POST"])
+@login_required
+def parse_jd():
+    import cv_parser
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file received"}), 400
+    file_bytes = f.read()
+    text = cv_parser.extract_text(f.filename, file_bytes)
+    if not text:
+        return jsonify({"error": "Could not extract text from file"}), 400
+    return jsonify({"text": text})
+
+
 @app.route("/import_folder", methods=["POST"])
 @login_required
 def import_folder():

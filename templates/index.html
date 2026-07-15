@@ -195,8 +195,17 @@
   <!-- RANK TAB -->
   <div class="tab-content active" id="tab-rank">
     <div class="card">
-      <h2>Paste Job Description</h2>
-      <textarea id="jd-input" placeholder="Paste the full job description here — requirements, responsibilities, qualifications..."></textarea>
+      <h2>Job Description</h2>
+
+      <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+        <label style="font-size:0.85rem;font-weight:600;color:#444;white-space:nowrap;">Upload JD file:</label>
+        <input type="file" id="jd-file" accept=".pdf,.doc,.docx"
+          style="font-size:0.85rem;flex:1;"
+          onchange="loadJDFile(this)">
+        <span id="jd-file-status" style="font-size:0.8rem;color:#888;white-space:nowrap;"></span>
+      </div>
+
+      <textarea id="jd-input" placeholder="Or paste the job description here — requirements, responsibilities, qualifications..."></textarea>
       <div class="rank-controls">
         <div>
           <label>Number of top candidates to return</label>
@@ -401,6 +410,25 @@ function esc(str) {
 
 
 // ---- ALL CANDIDATES ----
+async function loadJDFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const status = document.getElementById('jd-file-status');
+  status.textContent = 'Reading...';
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/parse_jd', { method: 'POST', body: form });
+  const data = await res.json();
+  if (data.error) {
+    status.textContent = '✗ ' + data.error;
+    status.style.color = '#c62828';
+  } else {
+    document.getElementById('jd-input').value = data.text;
+    status.textContent = '✓ Loaded';
+    status.style.color = '#27ae60';
+  }
+}
+
 async function importFolder() {
   const folder = document.getElementById('folder-path').value.trim();
   const result = document.getElementById('folder-result');
