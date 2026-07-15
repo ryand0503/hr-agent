@@ -11,7 +11,7 @@ DEFAULTS = {
     "email_address": "",
     "email_password": "",
     "email_server": "outlook.office365.com",
-    "email_folder": "CV_inbox",
+    "email_folder": "CV_Inbox",
     "cv_subject_keywords": [],
     "anthropic_api_key": "",
     "days_back": 30,
