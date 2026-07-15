@@ -21,6 +21,9 @@ DEFAULTS = {
     "tenant_id": "",
     "client_id": "",
     "client_secret": "",
+    # LLM fields
+    "llm_mode": "claude",
+    "local_llm_url": "http://127.0.0.1:8080",
 }
 
 

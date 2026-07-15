@@ -1,22 +1,16 @@
 import json
-import anthropic
-import config
+import urllib.request
+import urllib.parse
+import settings
 
 
-def rank_candidates(jd_text, candidates, top_n):
-    """
-    Send all candidate CV texts + JD to Claude and get back ranked results.
-    Returns a list of dicts with rank, score, summary, strengths, gaps.
-    """
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
-
-    # Build a numbered list of candidates for the prompt
+def build_prompt(jd_text, candidates, top_n):
     candidates_block = ""
     for i, c in enumerate(candidates, 1):
-        cv_snippet = (c["cv_text"] or "")[:3000]  # cap per candidate to control token usage
+        cv_snippet = (c["cv_text"] or "")[:3000]
         candidates_block += f"\n--- CANDIDATE {i} (ID: {c['id']}, Name: {c['name']}) ---\n{cv_snippet}\n"
 
-    prompt = f"""You are an expert HR recruiter. Your task is to rank candidates for a job position.
+    return f"""You are an expert HR recruiter. Your task is to rank candidates for a job position.
 
 JOB DESCRIPTION:
 {jd_text}
@@ -36,27 +30,64 @@ Instructions:
   - "strengths": top 3 strengths relevant to this role (as a short string)
   - "gaps": top 2 gaps or missing requirements (as a short string)
 
-Return ONLY a valid JSON array of {top_n} objects. No extra text before or after the JSON.
-"""
+Return ONLY a valid JSON array of {top_n} objects. No extra text before or after the JSON."""
 
-    message = client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=4096,
-        messages=[{"role": "user", "content": prompt}]
-    )
 
-    raw = message.content[0].text.strip()
-
-    # Strip markdown code fences if present
+def parse_response(raw):
+    raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
         raw = raw.strip()
+    return json.loads(raw)
 
-    results = json.loads(raw)
 
-    # Attach DB candidate id properly
+def call_claude(prompt, api_key):
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    message = client.messages.create(
+        model="claude-sonnet-5",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return message.content[0].text
+
+
+def call_local_llm(prompt, base_url):
+    """Call llama-server or any OpenAI-compatible local LLM."""
+    url = base_url.rstrip("/") + "/v1/chat/completions"
+    payload = json.dumps({
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": 4096,
+    }).encode()
+    req = urllib.request.Request(
+        url, data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"]
+
+
+def rank_candidates(jd_text, candidates, top_n):
+    s = settings.load()
+    llm_mode = s.get("llm_mode", "claude")
+    prompt = build_prompt(jd_text, candidates, top_n)
+
+    if llm_mode == "local":
+        base_url = s.get("local_llm_url", "http://127.0.0.1:8080")
+        raw = call_local_llm(prompt, base_url)
+    else:
+        api_key = s.get("anthropic_api_key", "")
+        if not api_key:
+            raise ValueError("Anthropic API key not set. Go to Settings.")
+        raw = call_claude(prompt, api_key)
+
+    results = parse_response(raw)
+
     id_map = {c["id"]: c for c in candidates}
     enriched = []
     for r in results:

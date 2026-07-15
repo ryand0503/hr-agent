@@ -280,12 +280,36 @@
 
     <div class="card">
       <h2>AI Settings</h2>
+
       <div class="form-group">
-        <label>Anthropic API Key</label>
-        <input type="password" id="s-apikey" placeholder="sk-ant-...">
-        <div class="hint">Get yours at console.anthropic.com — needed for CV ranking</div>
+        <label>LLM Mode</label>
+        <div style="display:flex;gap:12px;margin-top:4px;">
+          <label style="font-weight:normal;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="radio" name="llm-mode" value="claude" id="llm-claude" onchange="toggleLLMMode()"> Claude (cloud)
+          </label>
+          <label style="font-weight:normal;display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="radio" name="llm-mode" value="local" id="llm-local" onchange="toggleLLMMode()"> Local LLM
+          </label>
+        </div>
       </div>
-      <div class="form-group" style="max-width:200px">
+
+      <div id="claude-section">
+        <div class="form-group">
+          <label>Anthropic API Key</label>
+          <input type="password" id="s-apikey" placeholder="sk-ant-...">
+          <div class="hint">Get yours at console.anthropic.com</div>
+        </div>
+      </div>
+
+      <div id="local-section" style="display:none;">
+        <div class="form-group">
+          <label>Local LLM URL</label>
+          <input type="text" id="s-llmurl" placeholder="http://127.0.0.1:8080">
+          <div class="hint">URL where llama-server or Ollama is running</div>
+        </div>
+      </div>
+
+      <div class="form-group" style="max-width:200px;margin-top:8px;">
         <label>Default scan period (days)</label>
         <input type="number" id="s-days" min="1" max="365" value="30">
       </div>
@@ -331,32 +355,45 @@ function switchTab(name) {
 }
 
 // ---- SETTINGS ----
+function toggleLLMMode() {
+  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value;
+  document.getElementById('claude-section').style.display = mode === 'local' ? 'none' : 'block';
+  document.getElementById('local-section').style.display  = mode === 'local' ? 'block' : 'none';
+}
+
 async function loadSettings() {
   const res = await fetch('/settings');
   const s = await res.json();
-  document.getElementById('s-email').value = s.email_address || '';
-  document.getElementById('s-folder').value = s.email_folder || 'CV_inbox';
-  document.getElementById('s-tenant').value = s.tenant_id || '';
-  document.getElementById('s-clientid').value = s.client_id || '';
-  document.getElementById('s-clientsecret').value = '';  // never pre-fill
-  document.getElementById('s-apikey').value = '';
-  document.getElementById('s-days').value = s.days_back || 30;
+  document.getElementById('s-email').value    = s.email_address || '';
+  document.getElementById('s-folder').value   = s.email_folder  || 'CV_inbox';
+  document.getElementById('s-tenant').value   = s.tenant_id     || '';
+  document.getElementById('s-clientid').value = s.client_id     || '';
+  document.getElementById('s-clientsecret').value = '';
+  document.getElementById('s-apikey').value   = '';
+  document.getElementById('s-llmurl').value   = s.local_llm_url || 'http://127.0.0.1:8080';
+  document.getElementById('s-days').value     = s.days_back     || 30;
+  const mode = s.llm_mode || 'claude';
+  document.getElementById(mode === 'local' ? 'llm-local' : 'llm-claude').checked = true;
+  toggleLLMMode();
   document.getElementById('setup-banner').style.display = s.configured ? 'none' : 'block';
 }
 
 async function saveSettings() {
-  const btn = document.getElementById('save-settings-btn');
-  const msg = document.getElementById('settings-msg');
+  const btn  = document.getElementById('save-settings-btn');
+  const msg  = document.getElementById('settings-msg');
   btn.disabled = true;
   btn.textContent = 'Saving...';
 
+  const mode = document.querySelector('input[name="llm-mode"]:checked')?.value || 'claude';
   const payload = {
-    email_address:     document.getElementById('s-email').value.trim(),
-    email_folder:      document.getElementById('s-folder').value.trim(),
-    tenant_id:         document.getElementById('s-tenant').value.trim(),
-    client_id:         document.getElementById('s-clientid').value.trim(),
+    email_address:  document.getElementById('s-email').value.trim(),
+    email_folder:   document.getElementById('s-folder').value.trim(),
+    tenant_id:      document.getElementById('s-tenant').value.trim(),
+    client_id:      document.getElementById('s-clientid').value.trim(),
+    days_back:      parseInt(document.getElementById('s-days').value) || 30,
+    llm_mode:       mode,
+    local_llm_url:  document.getElementById('s-llmurl').value.trim(),
     anthropic_api_key: document.getElementById('s-apikey').value.trim(),
-    days_back:         parseInt(document.getElementById('s-days').value) || 30,
   };
   const secret = document.getElementById('s-clientsecret').value;
   if (secret) payload.client_secret = secret;
@@ -372,7 +409,7 @@ async function saveSettings() {
 
   if (res.ok) {
     msg.className = 'alert alert-success';
-    msg.textContent = 'Settings saved. You can now scan emails and rank candidates.';
+    msg.textContent = 'Settings saved.';
     document.getElementById('setup-banner').style.display = 'none';
   } else {
     msg.className = 'alert alert-error';
