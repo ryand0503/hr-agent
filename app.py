@@ -1,5 +1,4 @@
 import os
-import threading
 from functools import wraps
 from flask import (
     Flask, render_template, request, jsonify,
@@ -20,9 +19,6 @@ app.secret_key = os.environ.get("APP_SECRET", "dev-secret-change-in-production")
 
 # App password — set APP_PASSWORD env var in production (Railway dashboard)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
-
-scan_status = {"running": False, "log": [], "done": False, "result": {}}
-
 
 # ---- Auth ----
 
@@ -72,40 +68,6 @@ def candidates():
     rows = database.get_all_candidates()
     return jsonify(rows)
 
-
-@app.route("/scan", methods=["POST"])
-@login_required
-def scan():
-    global scan_status
-    if scan_status["running"]:
-        return jsonify({"error": "Scan already running"}), 400
-
-    days = int(request.json.get("days", 30))
-    scan_status = {"running": True, "log": [], "done": False, "result": {}}
-
-    def run():
-        global scan_status
-        try:
-            import email_scanner
-            def log(msg):
-                scan_status["log"].append(msg)
-            result = email_scanner.scan_emails(days_back=days, progress_callback=log)
-            scan_status["result"] = result
-        except Exception as e:
-            scan_status["log"].append(f"Fatal error: {e}")
-            scan_status["result"] = {"error": str(e)}
-        finally:
-            scan_status["running"] = False
-            scan_status["done"] = True
-
-    threading.Thread(target=run, daemon=True).start()
-    return jsonify({"status": "started"})
-
-
-@app.route("/scan_status")
-@login_required
-def get_scan_status():
-    return jsonify(scan_status)
 
 
 @app.route("/rank", methods=["POST"])

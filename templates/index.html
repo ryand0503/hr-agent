@@ -192,7 +192,6 @@
 
   <div class="tab-bar">
     <div class="tab active" onclick="switchTab('rank')">Rank Candidates</div>
-    <div class="tab" onclick="switchTab('scan')">Scan Emails</div>
     <div class="tab" onclick="switchTab('all')">All Candidates</div>
     <div class="tab" onclick="switchTab('settings')">⚙ Settings</div>
   </div>
@@ -221,25 +220,6 @@
     </div>
   </div>
 
-  <!-- SCAN TAB -->
-  <div class="tab-content" id="tab-scan">
-    <div class="card">
-      <h2>Scan Email Inbox for CVs</h2>
-      <p style="font-size:0.88rem;color:#666;margin-bottom:16px;">
-        Connects to your Outlook mailbox and imports any emails with CV attachments (PDF, DOCX) into the database.
-        Only new CVs are added — duplicates are skipped automatically.
-      </p>
-      <div class="scan-row">
-        <div>
-          <label>Scan last N days</label>
-          <input type="number" id="scan-days" value="30" min="1" max="365">
-        </div>
-        <button class="btn-primary" id="scan-btn" onclick="startScan()">Start Scan</button>
-      </div>
-      <div id="scan-log"></div>
-      <div id="scan-result" class="alert" style="display:none;margin-top:12px;"></div>
-    </div>
-  </div>
 
   <!-- SETTINGS TAB -->
   <div class="tab-content" id="tab-settings">
@@ -506,57 +486,6 @@ function esc(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ---- SCAN ----
-let scanPoll = null;
-
-async function startScan() {
-  const days = parseInt(document.getElementById('scan-days').value) || 30;
-  const btn = document.getElementById('scan-btn');
-  const log = document.getElementById('scan-log');
-  const result = document.getElementById('scan-result');
-  log.style.display = 'block';
-  log.innerHTML = 'Connecting to mailbox...\n';
-  result.style.display = 'none';
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Scanning...';
-
-  await fetch('/scan', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({days})
-  });
-
-  scanPoll = setInterval(async () => {
-    const r = await fetch('/scan_status');
-    const s = await r.json();
-    log.innerHTML = s.log.join('\n') || 'Working...';
-    log.scrollTop = log.scrollHeight;
-    if (s.done) {
-      clearInterval(scanPoll);
-      btn.disabled = false;
-      btn.innerHTML = 'Start Scan';
-      const res = s.result;
-      if (res.error) {
-        result.className = 'alert alert-error';
-        result.textContent = 'Error: ' + res.error;
-      } else {
-        result.className = 'alert alert-success';
-        result.textContent = `Done. Added: ${res.saved} CVs | Skipped (duplicates): ${res.skipped} | Errors: ${res.errors}`;
-        sessionAdded += res.saved;
-        document.getElementById('stat-new').textContent = sessionAdded;
-        refreshCount();
-      }
-      result.style.display = 'block';
-    }
-  }, 1500);
-}
-
-async function refreshCount() {
-  const r = await fetch('/candidates');
-  const data = await r.json();
-  document.getElementById('stat-total').textContent = data.length;
-  document.getElementById('header-count').textContent = data.length + ' candidates in database';
-}
 
 // ---- ALL CANDIDATES ----
 async function loadAllCandidates() {
